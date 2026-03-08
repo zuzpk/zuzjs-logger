@@ -7,9 +7,11 @@ export const logHistory: LogEntry[] = [];
 export type ScopedLogger = Record<string, any> & Logger;
 
 const defaultFormatter: LogFormatter = ({ timestamp, name, levelLabel, tag, message, deltaLabel }) => {
-  const loggerName = pc.bold(pc.blue(name));
-  const formattedTag = pc.magenta(`[${tag.toUpperCase()}]`);
-  return `${pc.gray(timestamp)} ${loggerName} ${levelLabel} ${formattedTag} ${message}${deltaLabel}\n`;
+  const ts = pc.gray(timestamp);
+  const n = pc.bold(pc.blue(`[${name}]`));
+  const t = pc.magenta(`[${tag.toUpperCase()}]`);
+  
+  return `${ts} ${n} ${levelLabel} ${t} ${message}${deltaLabel}\n`;
 };
 
 class Logger {
@@ -120,7 +122,7 @@ class Logger {
       name: this._name,
       level,
       levelLabel: this._getLevelLabel(level),
-      tag: pc.magenta(`[${tag.toUpperCase()}]`),
+      tag: tag,
       message: fullMessage,
       deltaLabel: delta > 0 ? pc.italic(pc.gray(` +${delta}ms`)) : ""
     }));
