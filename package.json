@@ -1,0 +1,51 @@
+{
+  "name": "@zuzjs/logger",
+  "version": "0.1.1",
+  "keywords": [
+    "logger",
+    "zuz",
+    "zuz.js",
+    "zuz logger",
+    "zuzjs"
+  ],
+  "description": "The logger you would have written yourself. Zero dependencies. Infinite context. Precision logging for modern JS.",
+  "author": "Zuz.js Team <support@zuz.com.pk>",
+  "license": "MIT",
+  "type": "module",
+  "main": "./dist/index.cjs",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "require": "./dist/index.cjs"
+    }
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "dev:js": "tsup --watch",
+    "dev": "npm-run-all -p dev:*",
+    "build": "rm -rf dist && tsup",
+    "publish": "npm run build && node publish-pre.js && npm publish && node publish-post.js"
+  },
+  "engines": {
+    "node": ">=18.17.0"
+  },
+  "sideEffects": [
+    "reflect-metadata"
+  ],
+  "dependencies": {
+    "@types/ws": "^8.18.1",
+    "picocolors": "^1.1.1",
+    "ws": "^8.19.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.3.0",
+    "husky": "^9.1.7",
+    "tsup": "^8.5.1",
+    "typescript": "^5.9.3"
+  }
+}
