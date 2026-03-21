@@ -1,5 +1,8 @@
 import { inspect } from "node:util";
+import { appendFile, mkdir } from "node:fs/promises";
+import { dirname } from "node:path";
 import pc from "picocolors";
+import WebSocket from "ws";
 import { LOG_LEVELS, LogEntry, LogFormatter, LoggerConfig, LoggerMethods, LogLevel } from "./types";
 
 export const logHistory: LogEntry[] = [];
@@ -21,6 +24,15 @@ class Logger {
   private _lastLogs: Map<string, number> = new Map(); // Track deltas per tag
   private _redactKeys: Set<string>;
   private _formatter: LogFormatter;
+  private _filePath?: string;
+  private _fileFormat: "text" | "json" = "text";
+  private _socket?: WebSocket;
+  private _socketUrl?: string;
+  private _socketReconnectIntervalMs = 3000;
+  private _socketMaxQueueSize = 500;
+  private _socketQueue: string[] = [];
+  private _socketReconnectTimer?: NodeJS.Timeout;
+  private _destroyed = false;
 
   constructor(config: LoggerConfig<any>) {
     if (!config.name) {
@@ -31,6 +43,8 @@ class Logger {
     this._level = config.level ?? "info";
     this._redactKeys = new Set(config.redact ?? ["password", "token", "secret", "authorization", "key"]);
     this._formatter = config.formatter ?? defaultFormatter;
+    this._setupFileTransport(config);
+    this._setupSocketTransport(config);
 
     // Return a Proxy so that any property access (like log.boot) 
     // automatically creates a scoped logger if the property doesn't exist.
@@ -42,6 +56,110 @@ class Logger {
       }
     });
 
+  }
+
+  private _setupFileTransport(config: LoggerConfig<any>) {
+    if (!config.file) return;
+
+    const fileCfg = typeof config.file === "string"
+      ? { path: config.file, format: "text" as const }
+      : config.file;
+
+    this._filePath = fileCfg.path;
+    this._fileFormat = fileCfg.format ?? "text";
+  }
+
+  private _setupSocketTransport(config: LoggerConfig<any>) {
+    if (!config.websocket) return;
+
+    const wsCfg = typeof config.websocket === "string"
+      ? { url: config.websocket }
+      : config.websocket;
+
+    this._socketUrl = wsCfg.url;
+    this._socketReconnectIntervalMs = wsCfg.reconnectIntervalMs ?? 3000;
+    this._socketMaxQueueSize = wsCfg.maxQueueSize ?? 500;
+    this._connectSocket();
+  }
+
+  private _connectSocket() {
+    if (!this._socketUrl || this._destroyed) return;
+    if (this._socket && (this._socket.readyState === WebSocket.OPEN || this._socket.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    const socket = new WebSocket(this._socketUrl);
+    this._socket = socket;
+
+    socket.on("open", () => {
+      this._flushSocketQueue();
+    });
+
+    socket.on("close", () => {
+      if (this._destroyed) return;
+      this._scheduleSocketReconnect();
+    });
+
+    socket.on("error", () => {
+      // Intentionally silent to avoid recursive logging loops.
+    });
+  }
+
+  private _scheduleSocketReconnect() {
+    if (this._socketReconnectTimer || this._destroyed) return;
+    this._socketReconnectTimer = setTimeout(() => {
+      this._socketReconnectTimer = undefined;
+      this._connectSocket();
+    }, this._socketReconnectIntervalMs);
+  }
+
+  private _queueSocketMessage(payload: string) {
+    if (this._socketQueue.length >= this._socketMaxQueueSize) {
+      this._socketQueue.shift();
+    }
+    this._socketQueue.push(payload);
+  }
+
+  private _flushSocketQueue() {
+    if (!this._socket || this._socket.readyState !== WebSocket.OPEN) return;
+
+    while (this._socketQueue.length > 0) {
+      const msg = this._socketQueue.shift();
+      if (!msg) break;
+      this._socket.send(msg);
+    }
+  }
+
+  private _sendSocket(payload: string) {
+    if (!this._socketUrl) return;
+
+    if (!this._socket || this._socket.readyState !== WebSocket.OPEN) {
+      this._queueSocketMessage(payload);
+      this._connectSocket();
+      return;
+    }
+
+    this._socket.send(payload);
+  }
+
+  private async _writeToFile(logEntry: LogEntry) {
+    if (!this._filePath) return;
+
+    try {
+      await mkdir(dirname(this._filePath), { recursive: true });
+
+      const line = this._fileFormat === "json"
+        ? `${JSON.stringify(logEntry)}\n`
+        : `${logEntry.timestamp} [${logEntry.name}] ${logEntry.level.toUpperCase()} [${logEntry.tag.toUpperCase()}] ${logEntry.message}${logEntry.deltaMs ? ` +${logEntry.deltaMs}ms` : ""}\n`;
+
+      await appendFile(this._filePath, this._stripAnsi(line), "utf8");
+    } catch {
+      // Ignore transport failures to keep logging non-blocking for app flow.
+    }
+  }
+
+  private _stripAnsi(input: string): string {
+    return input.replace(/\x1B\[[0-9;]*m/g, "");
   }
 
   // Getters for configuration
@@ -98,21 +216,18 @@ class Logger {
     const delta = now - last;
     this._lastLogs.set(tag, now);
 
-    const loggerName = pc.bold(pc.blue(`[${this._name}]`));
-
-    const timestamp = pc.gray(new Date().toLocaleTimeString());
-    const levelLabel = this._getLevelLabel(level);
-    const formattedTag = pc.magenta(`[${tag.toUpperCase()}]`);
-    const deltaLabel = delta > 0 ? pc.italic(pc.gray(` +${delta}ms`)) : "";
-
     const fullMessage = args.map(arg => this._formatValue(arg)).join(" ");
 
-    logHistory.push({ 
-      tag, 
-      level, 
-      message: fullMessage, 
-      timestamp: new Date().toISOString() 
-    });
+    const entry: LogEntry = {
+      name: this._name,
+      tag,
+      level,
+      message: fullMessage,
+      timestamp: new Date().toISOString(),
+      deltaMs: delta,
+    };
+
+    logHistory.push(entry);
 
     if (logHistory.length > 1000) logHistory.shift();
 
@@ -126,6 +241,9 @@ class Logger {
       message: fullMessage,
       deltaLabel: delta > 0 ? pc.italic(pc.gray(` +${delta}ms`)) : ""
     }));
+
+    void this._writeToFile(entry);
+    this._sendSocket(JSON.stringify(entry));
     
   }
 

@@ -1,12 +1,27 @@
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "success"
 
 export interface LogEntry {
+  name?: string;
   tag: string;
   level: LogLevel;
   message: string;
   timestamp: string;
+  deltaMs?: number;
   data?: any[];
   stack?: string;
+}
+
+export type FileLogFormat = "text" | "json";
+
+export interface FileLoggerConfig {
+  path: string;
+  format?: FileLogFormat;
+}
+
+export interface WebSocketLoggerConfig {
+  url: string;
+  reconnectIntervalMs?: number;
+  maxQueueSize?: number;
 }
 
 export interface LoggerMethods {
@@ -39,7 +54,17 @@ export interface LoggerConfig<T extends string = string> {
   tags?: T[];
   /** Keys to mask in objects (e.g., ['password', 'token', 'secret']) */
   redact?: string[];
-  formatter?: LogFormatter
+  formatter?: LogFormatter;
+  /**
+   * Write logs to a local file.
+   * String shorthand is treated as `{ path: string }`.
+   */
+  file?: string | FileLoggerConfig;
+  /**
+   * Send logs to a websocket URL.
+   * String shorthand is treated as `{ url: string }`.
+   */
+  websocket?: string | WebSocketLoggerConfig;
 }
 
 export interface ILogger {
