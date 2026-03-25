@@ -1,20 +1,18 @@
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { inspect } from "node:util";
-import pc from "picocolors";
 import WebSocket from "ws";
-import { LOG_LEVELS, LogEntry, LogFormatter, LoggerConfig, LoggerMethods, LogLevel } from "./types";
+import colors from "./colors";
+import { LOG_LEVELS, LogEntry, LogFormatter, LogFormatterProps, LoggerConfig, LoggerMethods, LogLevel, TagDefinition } from "./types";
 
 export const logHistory: LogEntry[] = [];
 
 export type ScopedLogger = Record<string, any> & Logger;
 
-const defaultFormatter: LogFormatter = ({ timestamp, name, levelLabel, tag, message, deltaLabel }) => {
-  const ts = pc.gray(timestamp);
-  const n = pc.bold(pc.blue(`[${name}]`));
-  const t = pc.magenta(`[${tag.toUpperCase()}]`);
-  
-  return `${ts} ${n} ${levelLabel} ${t} ${message}${deltaLabel}\n`;
+const defaultFormatter: LogFormatter = ({ timestamp, name, levelLabel, coloredTag, message, deltaLabel }) => {
+  const ts = colors.gray(timestamp);
+  const n  = colors.bold(colors.blue(`[${name}]`));
+  return `${ts} ${n} ${levelLabel} ${coloredTag} ${message}${deltaLabel}\n`;
 };
 
 class Logger {
@@ -22,6 +20,7 @@ class Logger {
   private _level: LogLevel;
   private _name: string;
   private _lastLogs: Map<string, number> = new Map(); // Track deltas per tag
+  private _tagColors: Map<string, (s: string) => string> = new Map();
   private _redactKeys: Set<string>;
   private _formatter: LogFormatter;
   private _filePath?: string;
@@ -44,8 +43,10 @@ class Logger {
     this._level = config.level ?? "info";
     this._redactKeys = new Set(config.redact ?? ["password", "token", "secret", "authorization", "key"]);
     this._formatter = config.formatter ?? defaultFormatter;
+    this._setupTagColors(config.tags);
     this._setupFileTransport(config);
     this._setupSocketTransport(config);
+    this.format = this.format.bind(this);
 
     // Return a Proxy so that any property access (like log.boot) 
     // automatically creates a scoped logger if the property doesn't exist.
@@ -57,6 +58,22 @@ class Logger {
       }
     });
 
+  }
+
+  private _setupTagColors(tags?: TagDefinition<any>[]) {
+    if (!tags) return;
+    for (const def of tags) {
+      if (typeof def === "string") {
+        this._tagColors.set(def, colors.magenta);
+      } else {
+        const colorFn = (colors as any)[def.color];
+        this._tagColors.set(def.label, typeof colorFn === "function" ? colorFn : colors.magenta);
+      }
+    }
+  }
+
+  private _getTagColorFn(tag: string): (s: string) => string {
+    return this._tagColors.get(tag) ?? colors.magenta;
   }
 
   private _setupFileTransport(config: LoggerConfig<any>) {
@@ -182,6 +199,10 @@ class Logger {
     };
   }
 
+  format(props: LogFormatterProps){
+    return this._formatter(props)
+  }
+
   setMeta(meta: Record<string, any>) {
     this._meta = { ...this._meta, ...meta };
   }
@@ -237,14 +258,16 @@ class Logger {
     if (logHistory.length > 1000) logHistory.shift();
 
     // Final Output
+    const coloredTag = this._getTagColorFn(tag)(`[${tag.toUpperCase()}]`);
     process.stdout.write(this._formatter({
       timestamp: new Date().toLocaleTimeString(),
       name: this._name,
       level,
       levelLabel: this._getLevelLabel(level),
-      tag: tag,
+      tag,
+      coloredTag,
       message: fullMessage,
-      deltaLabel: delta > 0 ? pc.italic(pc.gray(` +${delta}ms`)) : ""
+      deltaLabel: delta > 0 ? colors.italic(colors.gray(` +${delta}ms`)) : ""
     }));
 
     void this._writeToFile(entry);
@@ -256,25 +279,20 @@ class Logger {
   }
 
   private _formatError(err: Error | any): string {
-    const name = pc.bgRed(pc.white(` ${err.name || 'Error'} `));
-    const code = err.code || err.errorCode ? pc.yellow(`[${err.code || err.errorCode}]`) : "";
-    const message = pc.bold(err.message);
-    
-    // Clean up the stack trace: 
-    // Remove the first line (the message, since we print it above)
-    // Dim the file paths to make the actual function names pop
+    const name    = colors.bgRed(colors.white(` ${err.name || "Error"} `));
+    const code    = err.code || err.errorCode ? colors.yellow(`[${err.code || err.errorCode}]`) : "";
+    const message = colors.bold(err.message);
+
     const stack = err.stack
       ? err.stack
           .split("\n")
           .slice(1)
-          .map((line: string) => {
-            // regex to dim paths in brackets or after 'at '
-            return pc.gray(line.replace(/(\/.*:\d+:\d+)/, (m) => pc.dim(m)));
-          })
+          .map((line: string) =>
+            colors.gray(line.replace(/(\/.*:\d+:\d+)/, (m) => colors.dim(m)))
+          )
           .join("\n")
       : "";
 
-    // Assemble the "Pretty" Error block
     return `\n  ${name} ${code} ${message}\n${stack}\n`;
   }
 
@@ -291,13 +309,13 @@ class Logger {
 
   private _getLevelLabel(level: LogLevel): string {
     const labels: Record<LogLevel, string> = {
-      trace: pc.gray("TRACE"),
-      debug: pc.blue("DEBUG"),
-      info: pc.green("INFO "),
-      warn: pc.yellow("WARN "),
-      error: pc.red("ERROR"),
-      fatal: pc.bgRed(pc.white("FATAL")),
-      success: pc.bgGreen(pc.white("SUCCESS")),
+      trace:   colors.gray("TRACE"),
+      debug:   colors.blue("DEBUG"),
+      info:    colors.green("INFO "),
+      warn:    colors.yellow("WARN "),
+      error:   colors.red("ERROR"),
+      fatal:   colors.bgRed(colors.white("FATAL")),
+      success: colors.bgGreen(colors.white("SUCCESS")),
     };
     return labels[level];
   }

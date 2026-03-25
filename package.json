@@ -1,6 +1,6 @@
 {
   "name": "@zuzjs/logger",
-  "version": "0.1.6",
+  "version": "0.1.9",
   "keywords": [
     "logger",
     "zuz",
@@ -39,13 +39,12 @@
   ],
   "dependencies": {
     "@types/ws": "^8.18.1",
-    "picocolors": "^1.1.1",
     "ws": "^8.19.0"
   },
   "devDependencies": {
     "@types/node": "^25.3.0",
     "husky": "^9.1.7",
     "tsup": "^8.5.1",
-    "typescript": "^5.9.3"
+    "typescript": "^6.0.2"
   }
 }

@@ -1,5 +1,15 @@
 export type LogLevel = "trace" | "debug" | "info" | "warn" | "error" | "fatal" | "success"
 
+export type TagColor =
+  | "reset" | "bold" | "dim" | "italic" | "underline" | "inverse" | "hidden" | "strikethrough"
+  | "black" | "red" | "green" | "yellow" | "blue" | "magenta" | "cyan" | "white" | "gray"
+  | "bgBlack" | "bgRed" | "bgGreen" | "bgYellow" | "bgBlue" | "bgMagenta" | "bgCyan" | "bgWhite"
+  | "blackBright" | "redBright" | "greenBright" | "yellowBright" | "blueBright" | "magentaBright" | "cyanBright" | "whiteBright"
+  | "bgBlackBright" | "bgRedBright" | "bgGreenBright" | "bgYellowBright" | "bgBlueBright" | "bgMagentaBright" | "bgCyanBright" | "bgWhiteBright";
+
+/** A tag can be a plain string (uses default magenta color) or an object with a custom color. */
+export type TagDefinition<T extends string = string> = T | { label: T; color: TagColor };
+
 export interface LogEntry {
   name?: string;
   tag: string;
@@ -49,10 +59,11 @@ export interface LoggerConfig<T extends string = string> {
   name: string;
   level?: LogLevel;
   /** 
-   * Pre-define tags 
-   * Use it like log.boot.info
+   * Pre-define tags. Use plain strings for default color, or `{ label, color }` for a custom color.
+   * @example tags: ['boot', { label: 'wss', color: 'cyan' }]
+   * Use it like log.boot.info or log.wss.warn
   */
-  tags?: T[];
+  tags?: TagDefinition<T>[];
   /** Keys to mask in objects (e.g., ['password', 'token', 'secret']) */
   redact?: string[];
   formatter?: LogFormatter;
@@ -92,7 +103,10 @@ export interface LogFormatterProps {
   name: string;
   level: LogLevel;
   levelLabel: string;
+  /** Raw tag name (e.g. "wss") */
   tag: string;
+  /** Tag already wrapped in its color ANSI codes, e.g. "\x1b[36m[WSS]\x1b[39m" */
+  coloredTag: string;
   message: string;
   deltaLabel: string;
 }
