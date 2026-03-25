@@ -1,6 +1,6 @@
-import { inspect } from "node:util";
 import { appendFile, mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
+import { inspect } from "node:util";
 import pc from "picocolors";
 import WebSocket from "ws";
 import { LOG_LEVELS, LogEntry, LogFormatter, LoggerConfig, LoggerMethods, LogLevel } from "./types";
@@ -33,6 +33,7 @@ class Logger {
   private _socketQueue: string[] = [];
   private _socketReconnectTimer?: NodeJS.Timeout;
   private _destroyed = false;
+  private _meta: Record<string, any> = {};
 
   constructor(config: LoggerConfig<any>) {
     if (!config.name) {
@@ -181,6 +182,10 @@ class Logger {
     };
   }
 
+  setMeta(meta: Record<string, any>) {
+    this._meta = { ...this._meta, ...meta };
+  }
+
   /**
    * Deep clones and masks sensitive keys
    */
@@ -243,7 +248,10 @@ class Logger {
     }));
 
     void this._writeToFile(entry);
-    this._sendSocket(JSON.stringify(entry));
+    this._sendSocket(JSON.stringify({
+      meta: this._meta,
+      ...entry
+    }));
     
   }
 

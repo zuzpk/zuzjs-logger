@@ -9,6 +9,7 @@ export interface LogEntry {
   deltaMs?: number;
   data?: any[];
   stack?: string;
+  meta?: Record<string, any>;
 }
 
 export type FileLogFormat = "text" | "json";
